@@ -53,7 +53,7 @@ function DetailView({ id, statuses, onChanged }) {
           </div>
         )}
         <div className="detail-meta-row">
-          <span>📍 {r.address || "No specific address"}</span>
+          <span>📍 {r.address || "No specific address"} {r.location_approx === 1 && <span className="badge-approx-loc">Approx Location</span>}</span>
           <span>🏛️ {r.ward} Ward</span>
           <span>🕒 {fmt(r.created_at)}</span>
           <span>🏷️ Tracking: <b>{r.tracking_code}</b></span>
@@ -289,6 +289,9 @@ export default function Queue({ statuses, version, onChanged }) {
                         )}
                         {r.cluster_id && (
                           <span className="badge-hotspot">🔥 Hotspot</span>
+                        )}
+                        {r.location_approx === 1 && (
+                          <span className="badge-approx-loc" title="Inferred from address text, not exact GPS">📍 Approx Location</span>
                         )}
                       </div>
                       <div className="queue-meta">

@@ -57,10 +57,6 @@ def _verify_officer(auth_header: str | None) -> dict:
     if token == "demo-officer-token":
         return DEMO_OFFICERS["officer.pwd@mangaluru.gov.in"]
 
-    # In automated test suite if no token was passed, allow mock officer
-    if "PYTEST_CURRENT_TEST" in os.environ and not token:
-        return {"name": "Test Officer", "email": "test@mangaluru.gov.in", "role": "officer"}
-
     raise HTTPException(401, "Officer authentication required. Please sign in to the Officer Portal.")
 
 
@@ -71,6 +67,7 @@ async def lifespan(_: FastAPI):
         empty = conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
     if empty:
         seed_mod.seed()  # first run: load the synthetic demo set
+    ai.check_llm_health()
     yield
 
 
@@ -137,6 +134,7 @@ async def submit_report(text: str = Form(...), lat: float | None = Form(None), l
         raise HTTPException(422, f"Description must be 5-{C.MAX_TEXT} characters")
 
     # If coordinates were not passed directly, infer from address or default to city center
+    location_approx = 0
     if lat is None or lng is None:
         matched = None
         if address:
@@ -145,6 +143,7 @@ async def submit_report(text: str = Form(...), lat: float | None = Form(None), l
                     matched = (w_lat, w_lng)
                     break
         lat, lng = matched if matched else (12.8700, 74.8500)
+        location_approx = 1
 
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
         raise HTTPException(422, "Invalid coordinates")
@@ -162,7 +161,8 @@ async def submit_report(text: str = Form(...), lat: float | None = Form(None), l
         (C.UPLOAD_DIR / image_name).write_bytes(data)
     with db.connect() as conn:
         rid = pipeline.create_report(conn, text=text, lat=lat, lng=lng, address=(address or "").strip()[:200] or None,
-                                     user_category=category or None, image_path=image_name, citizen_session=citizen_session)
+                                     user_category=category or None, image_path=image_name, citizen_session=citizen_session,
+                                     location_approx=location_approx)
         pipeline.process_report(conn, rid)
         return _detail(conn, rid)
 
@@ -264,6 +264,7 @@ def track(code: str):
         return {"tracking_code": r["tracking_code"], "status": r["status"], "category": r["category"], "summary": r["summary"],
                 "address": r["address"], "created_at": r["created_at"], "assignee": r["assignee"], "statuses": C.STATUSES,
                 "linked_to_existing": bool(r["duplicate_of"]), "events": _events(conn, r["id"]),
+                "location_approx": r.get("location_approx", 0),
                 "image_url": f"/uploads/{r['image_path']}" if r["image_path"] else None}
 
 
@@ -305,15 +306,24 @@ def stats():
 def health():
     with db.connect() as conn:
         n = conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
-    return {"ok": True, "reports": n, "ai_mode": "llm" if ai.llm_available() else "rules",
-            "embedder": C.EMBEDDER, "model": C.LLM_MODEL if ai.llm_available() else None,
-            "categories": C.CATEGORIES, "statuses": C.STATUSES}
+    ai_mode = "llm" if ai.LLM_STATUS == "ok" else "rules"
+    return {
+        "ok": True,
+        "reports": n,
+        "ai_mode": ai_mode,
+        "llm_last_error": ai.LLM_LAST_ERROR,
+        "embedder": C.EMBEDDER,
+        "model": C.LLM_MODEL if ai_mode == "llm" else None,
+        "categories": C.CATEGORIES,
+        "statuses": C.STATUSES,
+    }
 
 
 @router.post("/demo/reset")
-def demo_reset():
+def demo_reset(authorization: str | None = Header(None)):
     """Reload the synthetic demo data (demo convenience; wipes all reports)."""
-    if os.getenv("ALLOW_DEMO_RESET", "1") != "1":
+    _verify_officer(authorization)
+    if os.getenv("ALLOW_DEMO_RESET", "0") != "1":
         raise HTTPException(403, "Demo reset disabled")
     return {"seeded": seed_mod.seed()}
 

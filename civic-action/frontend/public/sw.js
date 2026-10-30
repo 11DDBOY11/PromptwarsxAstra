@@ -1,4 +1,4 @@
-const CACHE_NAME = "civic-action-v1";
+const CACHE_NAME = "civic-action-v2";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -23,11 +23,34 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Let API requests go to network; if offline, let frontend handle queued storage
-  if (event.request.url.includes("/api/")) {
+  const url = new URL(event.request.url);
+
+  // Network-only for API requests
+  if (url.pathname.startsWith("/api/")) {
     return;
   }
 
+  // Stale-while-revalidate runtime caching for hashed JS/CSS assets under /assets/
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          const fetchPromise = fetch(event.request)
+            .then((networkResponse) => {
+              if (networkResponse && networkResponse.status === 200) {
+                cache.put(event.request, networkResponse.clone());
+              }
+              return networkResponse;
+            })
+            .catch(() => cachedResponse);
+          return cachedResponse || fetchPromise;
+        });
+      })
+    );
+    return;
+  }
+
+  // Cache first with network fallback for other shell assets
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return (

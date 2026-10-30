@@ -21,12 +21,8 @@ FRONTEND_DIST = ROOT.parent / "frontend" / "dist"
 groq_key = os.getenv("GROQ_API_KEY")
 anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 
-default_model = "llama-3.3-70b-versatile" if (groq_key or not anthropic_key) else "claude-haiku-5-5"
-configured_model = os.getenv("LLM_MODEL")
-if groq_key and (not configured_model or configured_model.startswith("claude")):
-    LLM_MODEL = "llama-3.3-70b-versatile"
-else:
-    LLM_MODEL = configured_model or default_model
+default_model = "openai/gpt-oss-20b" if (groq_key or not anthropic_key) else "claude-haiku-5-5"
+LLM_MODEL = os.getenv("LLM_MODEL") or default_model
 
 FALLBACK_ONLY = os.getenv("FALLBACK_ONLY") == "1"  # force rule-based path
 EMBEDDER = os.getenv("EMBEDDER", "tfidf")  # "tfidf" (default) or "st" (sentence-transformers)

@@ -288,19 +288,19 @@ Database: SQLite (`backend/data/civic.db`) with WAL mode enabled.
 ## 8. Tests
 
 Ran full test suite command: `python -m pytest`
-**Result: 20 passed, 1 warning in 6.39 seconds.**
+**Result: 21 passed, 1 warning in 6.58 seconds.**
 
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0
-rootdir: E:\prompt_wars\Astra\PromptwarsxAstra\civic-action
+rootdir: E:\prompt_wars\Astra\PromptwarsxAstra
 configfile: pytest.ini
-testpaths: backend/tests
-collected 20 items
+testpaths: civic-action/backend/tests
+collected 21 items
 
-backend\tests\test_api.py .........                                      [ 45%]
-backend\tests\test_pipeline.py ...........                               [100%]
-======================== 20 passed, 1 warning in 6.39s ========================
+civic-action\backend\tests\test_api.py ..........                         [ 47%]
+civic-action\backend\tests\test_pipeline.py ...........                  [100%]
+======================== 21 passed, 1 warning in 6.58s ========================
 ```
 
 ### Test Inventory
@@ -320,10 +320,11 @@ backend\tests\test_pipeline.py ...........                               [100%]
 14. `test_duplicates_follow_primary_and_can_be_unlinked`: Verifies status cascade to duplicates and officer unlink operation.
 15. `test_validation`: Verifies HTTP 422 on invalid coordinates, short text, or invalid MIME types.
 16. `test_reveal_endpoints`: Verifies `/api/stats` and `/api/clusters` output structures.
-17. `test_officer_authentication`: Tests invalid credentials (401), valid login (200), token decode, and token rejection.
+17. `test_officer_authentication`: Tests invalid credentials (401), valid login (200), token decode, token rejection, and unauthenticated protection on guarded endpoints.
 18. `test_citizen_session_tracking_and_recovery`: Verifies reports submitted with `citizen_session` are retrievable via `/api/reports/by-session`.
 19. `test_address_text_infers_ward_coordinates`: Verifies text address without GPS coordinates infers ward centroid coordinates.
 20. `test_kannada_language_complaint_intake`: Verifies UTF-8 intake of Kannada script complaint.
+21. `test_approx_location_reports_never_cluster_or_duplicate`: Verifies address-only reports with approximate locations are excluded from duplicate matching and DBSCAN hotspot clustering.
 
 ---
 
@@ -331,13 +332,15 @@ backend\tests\test_pipeline.py ...........                               [100%]
 
 ### Production Build Metrics
 Command: `npm run build` inside `civic-action/frontend`
-- `dist/index.html`: **0.94 kB** (gzip: 0.56 kB)
-- `dist/assets/index-B6Unlial.css`: **45.65 kB** (gzip: 12.42 kB)
-- `dist/assets/index-C7O3-dQA.js`: **196.76 kB** (gzip: 62.15 kB)
-- Build time: **1.92 seconds**
+- `dist/index.html`: **0.94 kB** (gzip: 0.57 kB)
+- `dist/assets/index-BOsUDnqV.css`: **30.66 kB** (gzip: 6.16 kB)
+- `dist/assets/index-B2jLcKXE.js`: **198.79 kB** (gzip: 62.86 kB)
+- Build time: **1.84 seconds**
 
 ### Dependencies (`package.json`)
 - `react`: `^18.3.1`
+- `react-dom`: `^18.3.1`
+*(Note: Leaflet and its CSS were removed entirely in favor of the lightweight Hotspots Hub)*
 - `react-dom`: `^18.3.1`
 - `leaflet`: `^1.9.4`
 - `@vitejs/plugin-react`: `^4.3.4`
@@ -397,3 +400,4 @@ Total seeded reports: **45** (defined in `backend/app/seed.py`).
 - **Database File Locking on Windows:** Running multiple uvicorn workers or parallel test suites while the server is active can trigger `sqlite3.OperationalError: database is locked` on Windows.
 - **Offline Report Photos:** Photos captured while offline in Ghat sections are lost if the citizen refreshes the browser before reconnecting, because binary files are not serialized to `localStorage` (only text and coordinates are preserved in the offline queue).
 - **Out-of-Town Coordinates:** Submitting coordinates outside Mangaluru (e.g. Bengaluru or Delhi) will forcibly assign the issue to the nearest Mangaluru ward centroid without warning.
+

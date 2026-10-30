@@ -11,9 +11,14 @@ def _age_days(created_at: str) -> float:
 
 
 def find_duplicate(conn, r: dict) -> tuple[int | None, float | None]:
-    """Link to the best open primary report with the same category, within DUP_RADIUS_M and similar enough."""
+    """Link to the best open primary report with the same category, within DUP_RADIUS_M and similar enough.
+    Reports with approximate/inferred locations are excluded from duplicate matching.
+    """
+    if r.get("location_approx"):
+        return None, None
     rows = conn.execute(
         "SELECT id, text, lat, lng FROM reports WHERE duplicate_of IS NULL AND status != 'Resolved' "
+        "AND (location_approx = 0 OR location_approx IS NULL) "
         "AND id != ? AND category = ?", (r["id"], r["category"])).fetchall()
     near = [c for c in rows if ai.haversine_m(r["lat"], r["lng"], c["lat"], c["lng"]) <= C.DUP_RADIUS_M]
     if not near:
@@ -42,7 +47,7 @@ def refresh(conn, use_llm: bool = True) -> None:
     """Recompute hotspots, briefs and priorities. Briefs are cached per member set to avoid repeat LLM calls."""
     base = _rescore(conn, set())
     members = [dict(r) | {"base_score": base.get(r["id"], 0)} for r in conn.execute(
-        "SELECT id, lat, lng, category, summary FROM reports WHERE duplicate_of IS NULL AND status != 'Resolved'")]
+        "SELECT id, lat, lng, category, summary FROM reports WHERE duplicate_of IS NULL AND status != 'Resolved' AND (location_approx = 0 OR location_approx IS NULL)")]
     groups = ai.find_clusters(members)
     old = {c["member_key"]: c for c in conn.execute("SELECT member_key, brief, ai_mode FROM clusters")}
     conn.execute("UPDATE reports SET cluster_id=NULL")
@@ -70,14 +75,15 @@ _CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 
 def create_report(conn, *, text: str, lat: float, lng: float, address: str | None = None,
                   user_category: str | None = None, image_path: str | None = None,
-                  created_at: str | None = None, citizen_session: str | None = None) -> int:
+                  created_at: str | None = None, citizen_session: str | None = None,
+                  location_approx: int = 0) -> int:
     """Insert a raw report plus its first timeline event. AI fields are filled by process_report."""
     created = created_at or db.now_iso()
     code = "CIV-" + "".join(secrets.choice(_CODE_CHARS) for _ in range(6))
     rid = conn.execute(
-        "INSERT INTO reports(tracking_code,text,image_path,user_category,lat,lng,address,ward,created_at,citizen_session) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (code, text, image_path, user_category, lat, lng, address, ai.ward_of(lat, lng), created, citizen_session)).lastrowid
+        "INSERT INTO reports(tracking_code,text,image_path,user_category,lat,lng,address,ward,created_at,citizen_session,location_approx) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (code, text, image_path, user_category, lat, lng, address, ai.ward_of(lat, lng), created, citizen_session, location_approx)).lastrowid
     db.add_event(conn, rid, "Submitted", "Report received", at=created)
     return rid
 

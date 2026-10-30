@@ -3,6 +3,15 @@ import { api } from "./api";
 const SESSION_KEY = "civic_citizen_session_id";
 const REPORTS_KEY = "civic_citizen_reports";
 const QUEUE_KEY = "civic_offline_queue";
+const FAILED_KEY = "civic_offline_failed";
+
+export function getOfflineFailed() {
+  try {
+    return JSON.parse(localStorage.getItem(FAILED_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
 
 export function getCitizenSessionId() {
   let id = localStorage.getItem(SESSION_KEY);
@@ -86,7 +95,25 @@ export async function syncOfflineQueue(onProgress) {
       if (onProgress) onProgress(res);
     } catch (err) {
       console.warn("Failed to sync offline item:", item, err);
-      remaining.push(item);
+      if (err && err.status >= 400 && err.status < 500) {
+        // 4xx error: remove from queue and record in civic_offline_failed
+        try {
+          const failed = getOfflineFailed();
+          failed.push({
+            id: item.id,
+            text: item.text,
+            status: err.status,
+            error: err.message || "Client rejection",
+            failedAt: new Date().toISOString(),
+          });
+          localStorage.setItem(FAILED_KEY, JSON.stringify(failed.slice(-20)));
+        } catch {
+          // ignore localStorage error
+        }
+      } else {
+        // Network error or 5xx: keep retrying
+        remaining.push(item);
+      }
     }
   }
 

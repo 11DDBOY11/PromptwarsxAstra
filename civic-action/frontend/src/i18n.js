@@ -15,6 +15,9 @@ export const TRANSLATIONS = {
     navQueue: "Priority Queue",
     officerPortalBtn: "Officer Sign-In",
     officerSignOut: "Sign Out",
+    aiHeaderLlm: (model) => `AI: LLM (${model})`,
+    aiHeaderRules: "AI: rule-based fallback",
+    aiHeaderLlmFailed: "AI: rule-based fallback (LLM call failed, using fallback)",
     
     // Offline banner
     offlineTitle: "Offline Mode (Western Ghats / Forest Section)",
@@ -98,6 +101,9 @@ export const TRANSLATIONS = {
     navQueue: "ಅಧಿಕಾರಿ ಸರದಿ",
     officerPortalBtn: "ಅಧಿಕಾರಿ ಲಾಗಿನ್",
     officerSignOut: "ಲಾಗ್‌ಔಟ್",
+    aiHeaderLlm: (model) => `AI: LLM (${model})`,
+    aiHeaderRules: "AI: ನಿಯಮ-ಆಧಾರಿತ ಫಾಲ್‌ಬ್ಯಾಕ್",
+    aiHeaderLlmFailed: "AI: ನಿಯಮ-ಆಧಾರಿತ ಫಾಲ್‌ಬ್ಯಾಕ್ (LLM ಕರೆ ವಿಫಲವಾಗಿದೆ, ಫಾಲ್‌ಬ್ಯಾಕ್ ಬಳಸಲಾಗುತ್ತಿದೆ)",
     
     // Offline banner
     offlineTitle: "ಆಫ್‌ಲೈನ್ ಮೋಡ್ (ಘಾಟ್ / ಅರಣ್ಯ ಪ್ರದೇಶ)",

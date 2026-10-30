@@ -162,8 +162,22 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Header Controls: Language Switcher + Officer Auth */}
+          {/* Right Header Controls: AI Status + Language Switcher + Officer Auth */}
           <div className="header-right-controls">
+            <div
+              className={`ai-header-badge ${health?.ai_mode === "llm" ? "ai-mode-llm" : "ai-mode-rules"}`}
+              title={health?.llm_last_error || ""}
+            >
+              <span className="ai-badge-dot"></span>
+              <span className="ai-badge-text">
+                {health?.ai_mode === "llm"
+                  ? `AI: LLM (${health.model || "openai/gpt-oss-20b"})`
+                  : health?.llm_last_error
+                  ? t("aiHeaderLlmFailed")
+                  : t("aiHeaderRules")}
+              </span>
+            </div>
+
             {/* Language Switcher Pill */}
             <div className="lang-switcher">
               <button

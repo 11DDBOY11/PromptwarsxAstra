@@ -101,6 +101,11 @@ export default function TrackView({ lang, initialCode, version }) {
                 <span>{CATEGORY_ICONS[ticket.category] || "📌"} {t(`cat_${ticket.category}`) || catLabel(ticket.category)}</span>
                 <span>·</span>
                 <span>📍 {ticket.address || "Area location"}</span>
+                {ticket.location_approx === 1 && (
+                  <span className="badge-approx-loc" title={lang === "kn" ? "ವಿಳಾಸದಿಂದ ಅಂದಾಜಿಸಿದ ಸ್ಥಳ" : "Approximate location inferred from address"}>
+                    📍 {lang === "kn" ? "ಅಂದಾಜು ಸ್ಥಳ" : "Approximate Location"}
+                  </span>
+                )}
                 <span>·</span>
                 <span>🕒 {fmt(ticket.created_at)}</span>
               </div>

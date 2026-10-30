@@ -4,7 +4,9 @@ async function parse(res) {
   if (res.ok) return res.json();
   const body = await res.json().catch(() => ({}));
   const d = body.detail;
-  throw new Error(Array.isArray(d) ? d.map((x) => x.msg).join("; ") : d || res.statusText);
+  const err = new Error(Array.isArray(d) ? d.map((x) => x.msg).join("; ") : d || res.statusText);
+  err.status = res.status;
+  throw err;
 }
 
 function getAuthHeaders(extra = {}) {
@@ -36,7 +38,7 @@ export const api = {
     fetch(`/api/reports/by-session?session_id=${encodeURIComponent(sessionId)}`).then(parse),
   clusters: () => fetch("/api/clusters").then(parse),
   stats: () => fetch("/api/stats").then(parse),
-  reset: () => fetch("/api/demo/reset", { method: "POST" }).then(parse),
+  reset: () => fetch("/api/demo/reset", { method: "POST", headers: getAuthHeaders() }).then(parse),
 
   // Officer Authentication
   officerLogin: async (email, password) => {

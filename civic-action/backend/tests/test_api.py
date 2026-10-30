@@ -7,6 +7,9 @@ from app.main import app
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
+        login = c.post("/api/auth/officer-login", json={"email": "officer.pwd@mangaluru.gov.in", "password": "officer123"}).json()
+        token = login["token"]
+        c.headers.update({"Authorization": f"Bearer {token}"})
         c.post("/api/demo/reset")  # known starting state: the 45 seeded reports
         yield c
 
@@ -91,6 +94,12 @@ def test_officer_authentication(client):
     me_bad = client.get("/api/auth/officer-me", headers={"Authorization": "Bearer invalid-token"})
     assert me_bad.status_code == 401
 
+    # 5. Unauthenticated access rejected on guarded endpoints
+    with TestClient(app) as unauth:
+        assert unauth.patch("/api/reports/1/status", json={"status": "Under review"}).status_code == 401
+        assert unauth.post("/api/reports/1/unlink").status_code == 401
+        assert unauth.post("/api/demo/reset").status_code == 401
+
 
 def test_citizen_session_tracking_and_recovery(client):
     session_id = "test_cit_session_998877"
@@ -136,4 +145,30 @@ def test_kannada_language_complaint_intake(client):
     assert rep["category"] == "road_damage"
     assert rep["ward"] == "Bejai"
     assert rep["tracking_code"].startswith("CIV-")
+
+
+def test_approx_location_reports_never_cluster_or_duplicate(client):
+    # Submit 3 distinct reports with no GPS in Falnir ward (address only)
+    r1 = client.post("/api/reports", data={"text": "Fallen tree branch blocking walkway near Falnir clinic", "address": "Falnir clinic cross"}).json()
+    r2 = client.post("/api/reports", data={"text": "Broken transformer sparking near Falnir main road", "address": "Falnir main road"}).json()
+    r3 = client.post("/api/reports", data={"text": "Garbage pile accumulating outside Falnir apartments", "address": "Falnir apartments"}).json()
+
+    assert r1["location_approx"] == 1
+    assert r2["location_approx"] == 1
+    assert r3["location_approx"] == 1
+
+    # None should be marked as duplicate
+    assert r1["duplicate_of"] is None
+    assert r2["duplicate_of"] is None
+    assert r3["duplicate_of"] is None
+
+    # None should belong to a cluster/hotspot
+    assert r1["cluster_id"] is None
+    assert r2["cluster_id"] is None
+    assert r3["cluster_id"] is None
+
+    # Verify track endpoint returns location_approx
+    t1 = client.get(f"/api/track/{r1['tracking_code']}").json()
+    assert t1["location_approx"] == 1
+
 

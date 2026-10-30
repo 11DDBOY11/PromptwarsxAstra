@@ -144,6 +144,35 @@ body {
   font-weight: 600;
 }
 
+.ai-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid var(--border-light);
+  background: var(--surface-secondary);
+  white-space: nowrap;
+}
+.ai-header-badge.ai-mode-llm {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+.ai-header-badge.ai-mode-rules {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+.ai-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
 .pulse-dot {
   width: 8px;
   height: 8px;
@@ -1146,6 +1175,15 @@ textarea.form-control {
 .badge-hotspot {
   background: #fee2e2;
   color: #b91c1c;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+}
+
+.badge-approx-loc {
+  background: #fef3c7;
+  color: #92400e;
   font-size: 0.74rem;
   font-weight: 700;
   padding: 2px 7px;

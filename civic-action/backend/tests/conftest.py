@@ -5,3 +5,4 @@ import tempfile
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp()
 os.environ["FALLBACK_ONLY"] = "1"
+os.environ["ALLOW_DEMO_RESET"] = "1"

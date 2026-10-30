@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS reports (
   priority_score INTEGER DEFAULT 0, priority_band TEXT DEFAULT 'Low', reasons TEXT DEFAULT '[]',
   duplicate_of INTEGER REFERENCES reports(id), duplicate_score REAL,
   cluster_id INTEGER,
-  citizen_session TEXT
+  citizen_session TEXT,
+  location_approx INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 CREATE INDEX IF NOT EXISTS idx_reports_dup ON reports(duplicate_of);
@@ -68,6 +69,8 @@ def init_db() -> None:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(reports)").fetchall()]
         if "citizen_session" not in cols:
             conn.execute("ALTER TABLE reports ADD COLUMN citizen_session TEXT")
+        if "location_approx" not in cols:
+            conn.execute("ALTER TABLE reports ADD COLUMN location_approx INTEGER DEFAULT 0")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_session ON reports(citizen_session)")
 
 

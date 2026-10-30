@@ -126,6 +126,13 @@ export default function ReportForm({ lang, categories, onTrack, onChanged }) {
             </div>
           </div>
 
+          <div className="alert-box" style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", margin: "14px 0", padding: "10px 14px", borderRadius: "8px", fontSize: "0.85rem" }}>
+            ⚠️ <b>{lang === "kn" ? "ಗಮನಿಸಿ:" : "Important Note:"}</b>{" "}
+            {lang === "kn"
+              ? "ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಫೋಟೋಗಳನ್ನು ಉಳಿಸಲಾಗುವುದಿಲ್ಲ. ಇಂಟರ್ನೆಟ್ ಸಿಂಕ್ ಆದ ನಂತರ ಅಗತ್ಯವಿದ್ದಲ್ಲಿ ಫೋಟೋವನ್ನು ಮರು-ಲಗತ್ತಿಸಬೇಕಾಗುತ್ತದೆ."
+              : "Photos are not saved while offline and will need to be re-attached."}
+          </div>
+
           <div className="action-buttons-row">
             <button
               type="button"
