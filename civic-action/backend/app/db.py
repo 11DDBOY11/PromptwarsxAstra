@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 CREATE INDEX IF NOT EXISTS idx_reports_dup ON reports(duplicate_of);
-CREATE INDEX IF NOT EXISTS idx_reports_session ON reports(citizen_session);
 CREATE TABLE IF NOT EXISTS clusters (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   centroid_lat REAL, centroid_lng REAL, radius_m REAL, report_count INTEGER,
@@ -69,7 +68,7 @@ def init_db() -> None:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(reports)").fetchall()]
         if "citizen_session" not in cols:
             conn.execute("ALTER TABLE reports ADD COLUMN citizen_session TEXT")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_session ON reports(citizen_session)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_session ON reports(citizen_session)")
 
 
 def reset_db() -> None:
