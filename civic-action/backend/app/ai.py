@@ -116,13 +116,17 @@ def _llm_json(prompt: str, max_tokens: int = 400) -> dict | None:
         try:
             from groq import Groq
             client = Groq(api_key=groq_key, timeout=8, max_retries=0)
-            chat = client.chat.completions.create(
-                model=C.LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-            )
+            kwargs = {
+                "model": C.LLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": max_tokens,
+                "response_format": {"type": "json_object"},
+            }
+            # Enable low reasoning effort for models supporting it (e.g. gpt-oss-20b)
+            if "gpt-oss" in C.LLM_MODEL or "reasoning" in C.LLM_MODEL:
+                kwargs["reasoning_effort"] = "low"
+            chat = client.chat.completions.create(**kwargs)
             raw = chat.choices[0].message.content or ""
             m = re.search(r"\{.*\}", raw, re.S)
             if not m:

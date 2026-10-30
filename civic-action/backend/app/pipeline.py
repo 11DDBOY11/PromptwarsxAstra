@@ -34,12 +34,18 @@ def _rescore(conn, cluster_ids: set[int]) -> dict[int, int]:
     dup_counts = {r["duplicate_of"]: r["n"] for r in conn.execute(
         "SELECT duplicate_of, COUNT(*) n FROM reports WHERE duplicate_of IS NOT NULL GROUP BY duplicate_of")}
     scores = {}
-    for r in conn.execute("SELECT id, signals, created_at FROM reports WHERE status != 'Resolved' AND signals IS NOT NULL").fetchall():
+    updates = []
+    for r in conn.execute("SELECT id, signals, created_at, priority_score, priority_band, reasons FROM reports WHERE status != 'Resolved' AND signals IS NOT NULL").fetchall():
         score, band, reasons = ai.priority(json.loads(r["signals"]), dup_counts.get(r["id"], 0),
                                            r["id"] in cluster_ids, _age_days(r["created_at"]))
-        conn.execute("UPDATE reports SET priority_score=?, priority_band=?, reasons=? WHERE id=?",
-                     (score, band, json.dumps(reasons), r["id"]))
         scores[r["id"]] = score
+        reasons_json = json.dumps(reasons)
+        if (r["priority_score"] != score or
+            r["priority_band"] != band or
+            r["reasons"] != reasons_json):
+            updates.append((score, band, reasons_json, r["id"]))
+    if updates:
+        conn.executemany("UPDATE reports SET priority_score=?, priority_band=?, reasons=? WHERE id=?", updates)
     return scores
 
 

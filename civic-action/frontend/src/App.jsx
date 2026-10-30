@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { api } from "./api";
-import Dashboard from "./components/Dashboard.jsx";
-import MapView from "./components/MapView.jsx";
 import OfficerLoginModal from "./components/OfficerLoginModal.jsx";
-import Queue from "./components/Queue.jsx";
 import ReportForm from "./components/ReportForm.jsx";
 import TrackView from "./components/TrackView.jsx";
 import { getTranslation } from "./i18n";
 import { getOfflineQueue, syncOfflineQueue } from "./offlineQueue";
+
+const Dashboard = lazy(() => import("./components/Dashboard.jsx"));
+const MapView = lazy(() => import("./components/MapView.jsx"));
+const Queue = lazy(() => import("./components/Queue.jsx"));
 
 export default function App() {
   const [lang, setLang] = useState(localStorage.getItem("civic_lang") || "en");
@@ -304,26 +305,28 @@ export default function App() {
             version={version}
           />
         )}
-        {officer && tab === "queue" && (
-          <Queue
-            lang={lang}
-            statuses={health?.statuses || []}
-            version={version}
-            onChanged={bump}
-          />
-        )}
-        {officer && tab === "map" && (
-          <MapView
-            lang={lang}
-            version={version}
-          />
-        )}
-        {officer && tab === "dash" && (
-          <Dashboard
-            lang={lang}
-            version={version}
-          />
-        )}
+        <Suspense fallback={<div style={{ textAlign: "center", padding: "2rem" }}><span className="spinner" /></div>}>
+          {officer && tab === "queue" && (
+            <Queue
+              lang={lang}
+              statuses={health?.statuses || []}
+              version={version}
+              onChanged={bump}
+            />
+          )}
+          {officer && tab === "map" && (
+            <MapView
+              lang={lang}
+              version={version}
+            />
+          )}
+          {officer && tab === "dash" && (
+            <Dashboard
+              lang={lang}
+              version={version}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Officer Login Modal */}

@@ -1,8 +1,9 @@
+import concurrent.futures
 import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app, OFFICER_TOKENS, LOGIN_FAILURES, LOGIN_LOCKOUTS
+from app.main import app, LOGIN_FAILURES, LOGIN_LOCKOUTS
 
 
 @pytest.fixture(scope="module")
@@ -82,7 +83,7 @@ def test_officer_authentication(client):
     assert res_ok.status_code == 200
     data = res_ok.json()
     token = data["token"]
-    assert token.startswith("mcc-")
+    assert "." in token and len(token.split(".")) == 2
     assert data["officer"]["name"] == "Inspector B. Shetty"
     assert data["officer"]["role"] == "officer"
 
@@ -173,7 +174,7 @@ def test_approx_location_reports_never_cluster_or_duplicate(client):
     assert t1["location_approx"] == 1
 
 
-def test_token_expiry(client):
+def test_token_expiry(client, monkeypatch):
     # Log in to get fresh token
     login = client.post("/api/auth/officer-login", json={"email": "officer.pwd@mangaluru.gov.in", "password": "officer123"}).json()
     token = login["token"]
@@ -182,8 +183,15 @@ def test_token_expiry(client):
     me_ok = client.get("/api/auth/officer-me", headers={"Authorization": f"Bearer {token}"})
     assert me_ok.status_code == 200
 
+    # Tampered signature must reject with 401
+    tampered = token[:-4] + "abcd"
+    me_tampered = client.get("/api/auth/officer-me", headers={"Authorization": f"Bearer {tampered}"})
+    assert me_tampered.status_code == 401
+    assert "signature" in me_tampered.json()["detail"].lower()
+
     # Simulate 13 hours passing (exceeding 12-hour lifetime)
-    OFFICER_TOKENS[token]["issued_at"] = time.time() - (13 * 3600)
+    t0 = time.time()
+    monkeypatch.setattr(time, "time", lambda: t0 + (13 * 3600))
 
     # Next call must reject with 401
     me_expired = client.get("/api/auth/officer-me", headers={"Authorization": f"Bearer {token}"})
@@ -240,6 +248,8 @@ def test_security_headers_and_cors_hardening(client):
     assert res.headers["x-frame-options"] == "DENY"
     assert res.headers["referrer-policy"] == "no-referrer"
     assert res.headers["permissions-policy"] == "geolocation=(self)"
+    assert "default-src 'self'" in res.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
 
     # 2. CORS: Unauthorized origin from evil domain gets no allow-origin header
     evil_res = client.get("/api/health", headers={"Origin": "https://evil.example"})
@@ -249,6 +259,114 @@ def test_security_headers_and_cors_hardening(client):
     # 3. Local dev origin allowed
     dev_res = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
     assert dev_res.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_non_blocking_event_loop_during_slow_llm(client, monkeypatch):
+    from app import ai
+
+    def slow_understand(text, user_cat):
+        time.sleep(0.4)
+        return ai.understand_rules(text, user_cat)
+
+    monkeypatch.setattr(ai, "understand", slow_understand)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        f_submit = executor.submit(
+            client.post,
+            "/api/reports",
+            data={"text": "Road damaged near school gate with deep ditch", "address": "Kadri gate"}
+        )
+        time.sleep(0.08)
+
+        t0 = time.time()
+        f_health1 = executor.submit(client.get, "/api/health")
+        f_health2 = executor.submit(client.get, "/api/health")
+
+        h1 = f_health1.result()
+        h2 = f_health2.result()
+        health_duration = time.time() - t0
+
+        sub = f_submit.result()
+
+    assert h1.status_code == 200 and h1.json()["ok"] is True
+    assert h2.status_code == 200 and h2.json()["ok"] is True
+    assert sub.status_code == 201
+    assert health_duration < 0.35
+
+
+def test_cache_control_headers(client):
+    # Test index / root / sw.js get no-cache
+    r_root = client.get("/")
+    assert r_root.headers.get("cache-control") == "no-cache"
+
+    r_sw = client.get("/sw.js")
+    assert r_sw.headers.get("cache-control") == "no-cache"
+
+    # Test /assets/ get public, max-age=31536000, immutable
+    r_asset = client.get("/assets/index-test.js")
+    assert r_asset.headers.get("cache-control") == "public, max-age=31536000, immutable"
+
+
+def test_reports_pagination(client):
+    r_all = client.get("/api/reports?limit=5&offset=0")
+    assert r_all.status_code == 200
+    reports = r_all.json()
+    assert len(reports) <= 5
+
+    r_offset = client.get("/api/reports?limit=5&offset=5")
+    assert r_offset.status_code == 200
+    reports_off = r_offset.json()
+    # IDs should differ between the two pages if enough reports exist
+    if reports and reports_off:
+        assert reports[0]["id"] != reports_off[0]["id"]
+
+
+def test_gated_read_endpoints_require_officer_auth(client):
+    # Authenticated client gets 200
+    assert client.get("/api/reports").status_code == 200
+    assert client.get("/api/reports/1").status_code == 200
+    assert client.get("/api/clusters").status_code == 200
+    assert client.get("/api/stats").status_code == 200
+
+    # Unauthenticated client gets 401 on gated read endpoints
+    with TestClient(app) as anon:
+        assert anon.get("/api/reports").status_code == 401
+        assert anon.get("/api/reports/1").status_code == 401
+        assert anon.get("/api/clusters").status_code == 401
+        assert anon.get("/api/stats").status_code == 401
+
+        # Public endpoints remain accessible
+        assert anon.get("/api/health").status_code == 200
+        assert anon.get("/api/reports/by-session?session_id=anonymous-session-xyz").status_code == 200
+        assert anon.get("/api/track/NONEXISTENT").status_code == 404
+
+
+def test_report_submission_rate_limit(client):
+    from app.main import REPORT_SUBMISSIONS
+    ip_headers = {"X-Forwarded-For": "198.51.100.77"}
+    REPORT_SUBMISSIONS.pop("198.51.100.77", None)
+
+    for i in range(10):
+        r = client.post("/api/reports", data={"text": f"Pothole report test {i} on road", "address": "Kadri"}, headers=ip_headers)
+        assert r.status_code == 201
+
+    # 11th request from same IP within the minute is rate limited
+    r_limited = client.post("/api/reports", data={"text": "Another pothole report 11 on road", "address": "Kadri"}, headers=ip_headers)
+    assert r_limited.status_code == 429
+    assert "rate limit" in r_limited.json()["detail"].lower() or "too many" in r_limited.json()["detail"].lower()
+
+
+def test_citizen_session_validation(client):
+    # Invalid token format: too short or bad characters
+    r_bad1 = client.post("/api/reports", data={"text": "Valid report text here", "citizen_session": "short"})
+    assert r_bad1.status_code == 422
+
+    r_bad2 = client.post("/api/reports", data={"text": "Valid report text here", "citizen_session": "invalid chars with spaces!"})
+    assert r_bad2.status_code == 422
+
+    r_bad3 = client.get("/api/reports/by-session?session_id=bad")
+    assert r_bad3.status_code == 422
+
 
 
 
