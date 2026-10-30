@@ -1,11 +1,12 @@
 import json
 import os
+import time
 import uuid
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -16,24 +17,27 @@ C.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 router = APIRouter(prefix="/api")
 
-# Pre-configured Municipal Officer Accounts
+# Demo officer accounts (for prototype / evaluation; passwords overridable via environment variables)
+DEMO_OFFICER_DEFAULT_PW = os.getenv("DEMO_OFFICER_PASSWORD", "officer123")
+DEMO_OFFICER_ADMIN_DEFAULT_PW = os.getenv("DEMO_OFFICER_PASSWORD", os.getenv("DEMO_OFFICER_ADMIN_PASSWORD", "admin123"))
+
 DEMO_OFFICERS = {
     "officer.pwd@mangaluru.gov.in": {
-        "password": "officer123",
+        "password": os.getenv("DEMO_OFFICER_PWD_PASSWORD", DEMO_OFFICER_DEFAULT_PW),
         "name": "Inspector B. Shetty",
         "department": "Road Infrastructure (PWD)",
         "ward": "Kadri & Central Mangaluru",
         "role": "officer",
     },
     "officer.drainage@mangaluru.gov.in": {
-        "password": "officer123",
+        "password": os.getenv("DEMO_OFFICER_DRAINAGE_PASSWORD", DEMO_OFFICER_DEFAULT_PW),
         "name": "Engineer K. Poojary",
         "department": "Stormwater Drainage & Sanitation",
         "ward": "Bunder & Port Area",
         "role": "officer",
     },
     "officer.admin@mangaluru.gov.in": {
-        "password": "admin123",
+        "password": DEMO_OFFICER_ADMIN_DEFAULT_PW,
         "name": "Commissioner Rai",
         "department": "Mangaluru City Corporation Administration",
         "ward": "All Wards",
@@ -41,11 +45,35 @@ DEMO_OFFICERS = {
     },
 }
 
-OFFICER_TOKENS = {}  # token -> officer_info
+OFFICER_TOKENS = {}  # token -> {"officer": dict, "issued_at": float}
+TOKEN_MAX_AGE_SECONDS = 12 * 3600  # 12 hours
+
+# Rate limiting for officer login: 5 failed attempts per client IP within 60s -> 429 for next 60s
+LOGIN_FAILURES: dict[str, list[float]] = {}
+LOGIN_LOCKOUTS: dict[str, float] = {}
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+
+def _verify_image_magic(data: bytes, ext: str) -> bool:
+    if ext == ".jpg":
+        return data.startswith(b"\xff\xd8\xff")
+    if ext == ".png":
+        return data.startswith(b"\x89PNG")
+    if ext == ".gif":
+        return data.startswith(b"GIF8")
+    if ext == ".webp":
+        return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return False
 
 
 def _verify_officer(auth_header: str | None) -> dict:
-    """Verifies that the request comes from an authenticated municipal officer."""
+    """Verifies that the request comes from an authenticated municipal officer with a non-expired token."""
     token = None
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split("Bearer ", 1)[1].strip()
@@ -53,7 +81,12 @@ def _verify_officer(auth_header: str | None) -> dict:
         token = auth_header.strip()
 
     if token and token in OFFICER_TOKENS:
-        return OFFICER_TOKENS[token]
+        entry = OFFICER_TOKENS[token]
+        # Check 12-hour expiry
+        if time.time() - entry.get("issued_at", 0) > TOKEN_MAX_AGE_SECONDS:
+            del OFFICER_TOKENS[token]
+            raise HTTPException(401, "Officer token has expired (12-hour lifetime). Please sign in again.")
+        return entry["officer"]
     if token == "demo-officer-token":
         return DEMO_OFFICERS["officer.pwd@mangaluru.gov.in"]
 
@@ -62,6 +95,8 @@ def _verify_officer(auth_header: str | None) -> dict:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    C.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    C.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     db.init_db()
     with db.connect() as conn:
         empty = conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
@@ -72,7 +107,25 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Civic Action Platform", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Allow only Vite dev server local origins; frontend is served from same origin in production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(self)"
+    return response
 
 
 # ---------- helpers ----------
@@ -100,11 +153,31 @@ class OfficerLoginIn(BaseModel):
 
 
 @router.post("/auth/officer-login")
-def officer_login(body: OfficerLoginIn):
+def officer_login(body: OfficerLoginIn, request: Request):
+    client_ip = _get_client_ip(request)
+    now = time.time()
+
+    # Check 60-second lockout
+    locked_until = LOGIN_LOCKOUTS.get(client_ip, 0)
+    if now < locked_until:
+        raise HTTPException(429, "Too many failed officer login attempts. Please wait 60 seconds.")
+
     email = body.email.strip().lower()
     acc = DEMO_OFFICERS.get(email)
     if not acc or acc["password"] != body.password:
+        # Record failure
+        failures = [t for t in LOGIN_FAILURES.get(client_ip, []) if now - t <= 60]
+        failures.append(now)
+        LOGIN_FAILURES[client_ip] = failures
+        if len(failures) >= 5:
+            LOGIN_LOCKOUTS[client_ip] = now + 60
+            LOGIN_FAILURES[client_ip] = []
         raise HTTPException(401, "Invalid municipal officer credentials")
+
+    # Clear failures upon successful login
+    LOGIN_FAILURES.pop(client_ip, None)
+    LOGIN_LOCKOUTS.pop(client_ip, None)
+
     token = f"mcc-{uuid.uuid4().hex}"
     info = {
         "email": email,
@@ -113,7 +186,10 @@ def officer_login(body: OfficerLoginIn):
         "ward": acc["ward"],
         "role": "officer",
     }
-    OFFICER_TOKENS[token] = info
+    OFFICER_TOKENS[token] = {
+        "officer": info,
+        "issued_at": time.time(),
+    }
     return {"token": token, "officer": info}
 
 
@@ -157,6 +233,8 @@ async def submit_report(text: str = Form(...), lat: float | None = Form(None), l
             raise HTTPException(422, "Image must be JPEG, PNG, WebP or GIF")
         if len(data) > C.MAX_IMAGE_BYTES:
             raise HTTPException(413, "Image larger than 5 MB")
+        if not _verify_image_magic(data, ext):
+            raise HTTPException(422, "Image file content does not match expected image format headers")
         image_name = f"{uuid.uuid4().hex}{ext}"
         (C.UPLOAD_DIR / image_name).write_bytes(data)
     with db.connect() as conn:

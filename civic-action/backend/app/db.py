@@ -48,6 +48,7 @@ def now_iso() -> str:
 @contextmanager
 def connect():
     C.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    C.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(C.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")

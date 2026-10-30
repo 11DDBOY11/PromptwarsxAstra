@@ -1,7 +1,29 @@
-backend/.venv/
+# Python
+.venv/
+**/.venv/
+*.pyc
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+**/.pytest_cache/
+
+# Data
 backend/data/
-backend/**/__pycache__/
-backend/.pytest_cache/
-frontend/node_modules/
+**/backend/data/
+civic-action/backend/data/*.db
+civic-action/backend/data/uploads/*
+!civic-action/backend/data/uploads/.gitkeep
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
 frontend/dist/
+**/frontend/dist/
+
+# Environment
 .env
+**/.env
+civic-action/.env
+civic-action/backend/.env
