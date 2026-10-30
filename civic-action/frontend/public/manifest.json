@@ -1,0 +1,17 @@
+{
+  "name": "CivicAction Karnataka - ಪೌರ ಸೇವೆ",
+  "short_name": "CivicAction",
+  "description": "Report and track civic issues even in low-network Western Ghats and forest regions with offline auto-sync.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+
