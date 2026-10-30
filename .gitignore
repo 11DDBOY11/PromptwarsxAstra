@@ -1,0 +1,21 @@
+# Python
+civic-action/backend/.venv/
+civic-action/backend/data/*.db
+civic-action/backend/data/uploads/*
+!civic-action/backend/data/uploads/.gitkeep
+civic-action/backend/**/__pycache__/
+civic-action/backend/.pytest_cache/
+*.pyc
+__pycache__/
+.venv/
+
+# Node
+civic-action/frontend/node_modules/
+civic-action/frontend/dist/
+node_modules/
+dist/
+
+# Environment
+.env
+civic-action/.env
+civic-action/backend/.env
